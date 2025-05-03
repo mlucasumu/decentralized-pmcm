@@ -314,6 +314,38 @@ def init_distributed_mode(args):
     setup_for_distributed(args.rank == 0)
 
 
+def init_distributed_mode_custom(args):
+    """
+    Custom version of init_distributed_mode that assumes args.rank, args.world_size,
+    args.gpu, and args.dist_url are already correctly set.
+    """
+
+    if not args.distributed_mode:
+        print('Not using distributed mode')
+        args.distributed = False
+        return
+
+    args.distributed = True
+    args.dist_backend = 'nccl'
+
+    torch.cuda.set_device(args.gpu)
+
+    print('| distributed init (rank {}): {}, gpu {}'.format(
+        args.rank, args.dist_url, args.gpu), flush=True)
+
+    torch.distributed.init_process_group(
+        backend=args.dist_backend,
+        init_method=args.dist_url,
+        world_size=args.world_size,
+        rank=args.rank,
+        timeout=datetime.timedelta(0, 7200)
+        #device_id=args.gpu
+    )
+    torch.distributed.barrier()
+
+    setup_for_distributed(args.rank == 0)
+
+
 def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_position_index"):
     missing_keys = []
     unexpected_keys = []

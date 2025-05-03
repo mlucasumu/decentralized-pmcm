@@ -12,6 +12,7 @@ import torch.distributed as dist
 from datasets.dataset import create_dataset_by_split, create_dataloader
 from optims.optim import create_optimizer, LayerDecayValueAssigner, get_is_head_flag_for_vit
 from utils.utils import NativeScalerWithGradNormCount as NativeScaler
+from utils.utils import init_distributed_mode_custom
 from algorithm.BaseTrainer import train_one_epoch, VQAHandler, evaluate
 
 
@@ -28,8 +29,17 @@ class ClientTrainer:
 
         self.sample_num_dict = sample_num_dict
         self.neighbour_dict = neighbour_dict
-        #self.barrier = barrier
-        #self.io_lock = io_lock
+
+        # Distributed mode
+        self.args.rank = client_id
+        self.args.world_size = args.client_nums
+        self.args.gpu = client_id % torch.cuda.device_count()
+        self.args.dist_url = f"tcp://127.0.0.1:{args.port}"
+        self.args.distributed_mode = True 
+
+        print(f"Client {self.client_id}: rank={self.args.rank}, gpu={self.args.gpu}, world_size={self.args.world_size}")
+        init_distributed_mode_custom(self.args)
+        #print(f"Cliente {self.client_id}: rank={self.args.rank}, gpu={self.args.gpu}, world_size={self.args.world_size}")
 
         self.total_batch_size = args.batch_size * args.update_freq * utils.get_world_size()
         self.assigner = LayerDecayValueAssigner([1.0, 20.0], scale_handler=get_is_head_flag_for_vit)
@@ -42,6 +52,8 @@ class ClientTrainer:
         self.model_ema = None
         self.update_freq = 1
         self.clip_grad = None
+
+        self.model_ddp = None
 
         self.prototypes = {"img": torch.randn([args.num_classes, args.embed_dim], dtype=torch.float32),
                            "text": torch.randn([args.num_classes, args.embed_dim], dtype=torch.float32),
@@ -64,11 +76,12 @@ class ClientTrainer:
                     if not self.args.no_fusion_proto_target:
                         self.args.fusion_proto_target = True
             
-            # Create directory for current round if it does not exist
+            # Create directory for current round (only first client)
             self.logger.write("client%d in communication round %d." % (self.client_id, cur_round))
             self.client_path = self.args.output_dir + '/client-round%d' % cur_round
-            with self.io_lock:
+            if self.client_id == 0:
                 Path(self.client_path).mkdir(parents=True, exist_ok=True)
+            torch.distributed.barrier()
 
             # Local train
             start_global_epoch = (cur_round - 1) * self.args.local_epochs
@@ -84,7 +97,7 @@ class ClientTrainer:
                                         cur_local_epoch=cur_local_epoch, step_offset=0,
                                         train_dataloader=train_loader_img_text, val_dataloader=val_loader,
                                         device=device, mode="vl")
-                    torch.distributed.barrier()
+                    #torch.distributed.barrier()
 
                 if self.args.modal_missing:
                     if np.random.binomial(n=1, p=0.5, size=1)[0]:
@@ -97,7 +110,7 @@ class ClientTrainer:
                                                 cur_local_epoch=cur_local_epoch, step_offset=offset_step,
                                                 train_dataloader=train_loader_img_only, val_dataloader=val_loader,
                                                 device=device, mode="v")
-                            torch.distributed.barrier()
+                            #torch.distributed.barrier()
 
                         offset_step += self.sample_num_dict[self.client_id]["img-only"] // global_batch_size
                         self.logger.write("offset step is %d for client%d, text-only" % (offset_step,self.client_id))
@@ -116,7 +129,7 @@ class ClientTrainer:
                                                 cur_local_epoch=cur_local_epoch, step_offset=offset_step,
                                                 train_dataloader=train_loader_text_only, val_dataloader=val_loader,
                                                 device=device, mode="l")
-                            torch.distributed.barrier()
+                            #torch.distributed.barrier()
 
                         offset_step += self.sample_num_dict[self.client_id]["text-only"] // global_batch_size
                         self.logger.write("offset step is %d for client%d, img-only" % (offset_step,self.client_id))
@@ -125,72 +138,76 @@ class ClientTrainer:
                                                 cur_local_epoch=cur_local_epoch, step_offset=offset_step,
                                                 train_dataloader=train_loader_img_only, val_dataloader=val_loader,
                                                 device=device, mode="v")
-                    torch.distributed.barrier()
+                    #torch.distributed.barrier()
             
             self.logger.write("finish training client%d in round%d " % (self.client_id, cur_round))
-            torch.distributed.barrier()
+            #torch.distributed.barrier()
 
             # Save model
-            with self.io_lock:
-              self.save_model("client%d_model.pth" % self.client_id)
+            self.save_model("client%d_model.pth" % self.client_id)
   
             # Compute and save local prototypes
             if self.args.prototype_as_rep_target or self.args.prototype_as_missing_modal:
                 self.compute_prototypes(dataloader=loader_for_prototype, device=device)
-                with self.io_lock:
-                    self.save_prototypes(ckpt_name="client%d_prototypes.pth" % self.client_id)
+                self.save_prototypes(ckpt_name="client%d_prototypes.pth" % self.client_id)
                 self.logger.write("get prototypes for client%d in round%d " % (self.client_id, cur_round))
                 torch.distributed.barrier()
 
             # Wait for all clients to finish local training
-            self.barrier.wait()
+            torch.distributed.barrier()
 
             # Agreggate models of neighbours
             self.logger.write("start fedavg in client%d." % (self.client_id))
             self.fedavg(party_list=self.neighbour_dict[self.client_id], cur_round=cur_round)
             self.logger.write("finish fedavg in client%d." % (self.client_id))
-            torch.distributed.barrier()
+            #torch.distributed.barrier()
 
             # Agreggate prototypes of neighbours
             if self.args.prototype_as_rep_target or self.args.prototype_as_missing_modal:
                 self.logger.write("start aggregating global prototypes in client%d." % (self.client_id))
                 self.aggregate_local_prototypes(party_list=self.neighbour_dict[self.client_id], cur_round=cur_round)
                 self.logger.write("finish aggregating global prototypes in client%d." % (self.client_id))
-                torch.distributed.barrier()
+                #torch.distributed.barrier()
 
+            torch.distributed.barrier()
             print("--------------------- finish round%d in client%d----------------------" % (cur_round,self.client_id))     
         
     def local_train_one_epoch(self, cur_local_epoch, cur_global_epoch, step_offset, device, train_dataloader, val_dataloader, mode):
+        print(f"-------------------- Cliente {self.client_id} entra en local_train_one_epoch() con {len(train_dataloader)} ejemplos.")
+        print(f"Sampler type: {type(train_dataloader.sampler)}")
+        print(f"Is DistributedSampler? {'DistributedSampler' in str(type(train_dataloader.sampler))}")
         self.model.to(device)
         for key in self.prototypes.keys():
             self.prototypes[key] = self.prototypes[key].to(device)
-
+        print(f"-------------------- Cliente {self.client_id} ha pasado los prototipos a la gpu")
         loss_scaler = NativeScaler()
 
-        model_ddp = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[self.args.gpu],
-                                                              find_unused_parameters=True)
-
+        if (self.model_ddp is None):
+            self.model_ddp = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[self.args.gpu],
+                                                              output_device=self.args.gpu, find_unused_parameters=True)
+        print(f"-------------------- Cliente {self.client_id} ha creado model_ddp")
         optimizer = create_optimizer(
             self.args, self.model, skip_list=self.model.no_weight_decay(),
             get_num_layer=self.assigner.get_layer_id, get_layer_scale=self.assigner.get_scale
         )
-
+        print(f"-------------------- Cliente {self.client_id} ha creado optimizer")
         task_handler = VQAHandler()
 
         train_dataloader.sampler.set_epoch(cur_global_epoch)
+        print(f"-------------------- Cliente {self.client_id} está a punto de llamar a train_one_epoch()")
         train_one_epoch(
-            self.args, model_ddp, train_dataloader, optimizer, device, task_handler, cur_global_epoch,
+            self.args, self.model_ddp, train_dataloader, optimizer, device, task_handler, cur_global_epoch,
             cur_local_epoch, cur_local_epoch * self.num_training_steps_per_epoch + step_offset,
             self.lr_schedule_values, loss_scaler, self.prototypes, self.clip_grad, self.update_freq,
             self.model_ema, mode, self.logger
         )
-        torch.distributed.barrier()
-
+        #torch.distributed.barrier()
+        print(f"-------------- Client {self.client_id} finished train_one_epoch")
         self.model.set_mode("vl")
         self.model.cpu()
         for key in self.prototypes.keys():
             self.prototypes[key] = self.prototypes[key].cpu()
-        torch.distributed.barrier()
+        #torch.distributed.barrier()
       
     def load_model(self):
         all_global_model = glob.glob(os.path.join(self.server_path, 'global_model-*.pth'))

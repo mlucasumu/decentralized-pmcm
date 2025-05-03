@@ -12,10 +12,11 @@ import time
 import torch
 import torch.backends.cudnn as cudnn
 from pathlib import Path
-from algorithm.MMFL import MMFL
 from utils import utils
 import model.beit3_modeling  # This is important
 import logging
+import torch.multiprocessing as mp 
+from algorithm.MMFL import run_client_process
 
 
 def get_args():
@@ -70,6 +71,7 @@ def get_args():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://')
     parser.add_argument('--distributed_mode', default=True)
+    parser.add_argument('--port', default=29500, type=int)
     # parameter for dump predictions (VQA, COCO captioning, NoCaps)
     parser.add_argument('--task_cache_path', default=None, type=str)
     # result parameters
@@ -118,9 +120,6 @@ def get_args():
 
 
 def main(args):
-    # init distributed training
-    utils.init_distributed_mode(args)
-
     logger = utils.Logger(log_path=args.log_path)
     logger.write("create logger.")
 
@@ -176,7 +175,28 @@ def main(args):
     neighbour_dict = utils.get_topology(args.client_nums, args.topology, args.max_random_neighbours)
 
     # federated learning
-    torch.distributed.barrier()
+    processes = []
+    for client_id in range(args.client_nums):
+        p = mp.Process(
+            target=run_client_process,
+            args=(
+                args, client_id, sample_num_dict, neighbour_dict,
+                "val", train_split_list_img_text,
+                train_split_list_img_only, train_split_list_text_only,
+                device, args.communication_rounds, None, 
+                args.output_dir + "/server", logger,
+            )
+        ) 
+        p.start()
+        processes.append(p)
+
+    # Wait for clients to finish
+    for p in processes:
+        p.join()
+
+    logger.write("--------------------- Finish Federated Learning ----------------------")
+
+    '''
     algo = MMFL(args=args, client_nums=args.client_nums, sample_num_dict=sample_num_dict,
                 neighbour_dict=neighbour_dict, device=device, val_split="val",
                 train_split_list_img_text=train_split_list_img_text,
@@ -188,12 +208,11 @@ def main(args):
     # start training
     train_flag = True
     if train_flag:
-        torch.distributed.barrier()
         algo.run(
             n_comm_rounds=args.communication_rounds,
             selected_client_nums=args.selected_client_nums,
         )
-
+    '''
 
 if __name__ == '__main__':
 

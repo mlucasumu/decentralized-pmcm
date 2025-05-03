@@ -151,6 +151,7 @@ def train_one_epoch(
         model_ema: Optional[ModelEma] = None, mode: str = "vl",
         logger=None
 ):
+    print(f"++++++++++++++ Cliente ha entrado en train_one_epoch")
     model.train(True)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -257,7 +258,7 @@ def train_one_epoch(
                                                      loss_scale_value, weight_decay_value, grad_norm)
                      )
 
-    metric_logger.synchronize_between_processes()
+    #metric_logger.synchronize_between_processes() # Esto da problemas en descentralizado, hace que se quede bloqueado
     print("Averaged stats:", metric_logger)
     logger.write("Averaged stats:")
     logger.write(metric_logger)
