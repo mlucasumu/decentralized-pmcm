@@ -302,7 +302,7 @@ def init_distributed_mode(args):
     args.distributed = True
 
     torch.cuda.set_device(args.gpu)
-    args.dist_backend = 'nccl'
+    args.dist_backend = 'nccl' if args.device == 'cuda' else 'gloo' # nccl for GPU, gloo for CPU as per https://pytorch.org/docs/stable/distributed.html
     print('| distributed init (rank {}): {}, gpu {}'.format(
         args.rank, args.dist_url, args.gpu), flush=True)
     torch.distributed.init_process_group(

@@ -17,7 +17,7 @@ from algorithm.BaseTrainer import train_one_epoch, VQAHandler, evaluate
 
 class ClientTrainer:
     def __init__(self, args, model, client_id, server_path, client_path, steps_per_epoch, logger, 
-                sample_num_dict, neighbour_dict):
+                sample_num_dict, neighbour_dict, barrier, io_lock):
         self.args = args
         self.model = model
         self.client_id = client_id
@@ -28,8 +28,8 @@ class ClientTrainer:
 
         self.sample_num_dict = sample_num_dict
         self.neighbour_dict = neighbour_dict
-        #self.barrier = barrier
-        #self.io_lock = io_lock
+        self.barrier = barrier
+        self.io_lock = io_lock
 
         self.total_batch_size = args.batch_size * args.update_freq * utils.get_world_size()
         self.assigner = LayerDecayValueAssigner([1.0, 20.0], scale_handler=get_is_head_flag_for_vit)
@@ -167,7 +167,9 @@ class ClientTrainer:
 
         loss_scaler = NativeScaler()
 
-        model_ddp = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[self.args.gpu],
+        device_ids = [self.args.gpu] if self.args.device == 'cuda' else None # As per https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html
+
+        model_ddp = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=device_ids,
                                                               find_unused_parameters=True)
 
         optimizer = create_optimizer(

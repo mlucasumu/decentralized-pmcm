@@ -105,7 +105,7 @@ def get_args():
     parser.set_defaults(fusion_proto_target=False)
     parser.add_argument('--modal_missing', action='store_true', default=True)
     parser.add_argument('--prototype_as_missing_modal', action='store_true', default=True)
-    parser.add_argument('--prototype_as_rep_target', action='store_true', default=True)
+    parser.add_argument('--prototype_as_rep_target', action='store_true', default=False)    # Problems when calculating CLIP loss??
     parser.add_argument('--no_img_proto_target', action='store_true', default=False)
     parser.add_argument('--no_text_proto_target', action='store_true', default=False)
     parser.add_argument('--no_fusion_proto_target', action='store_true', default=False)

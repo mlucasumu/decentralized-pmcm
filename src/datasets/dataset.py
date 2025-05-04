@@ -354,6 +354,7 @@ class VQAv2Dataset(BaseDataset):
                 _write_data_into_jsonl(items=split2items[split], jsonl_file=os.path.join(data_path, "vqa.%s.jsonl" % split))
 
             # Following ViLT, we use 1000 images of the original val set as the final val set
+            # Original validation set: 40504 images, therefore we divide its size by 40, approximately
             val_image2items = defaultdict(list)
             for item in split2items["val"]:
                 val_image2items[item["image_path"]].append(item)
@@ -365,8 +366,9 @@ class VQAv2Dataset(BaseDataset):
             random.shuffle(val_images)
             trainable_val = []
             rest_val = []
+            selection_idx = len(val_images) // 40
             for i, image_id in enumerate(val_images):
-                if i < 1000:
+                if i < selection_idx:
                     rest_val += val_image2items[image_id]
                 else:
                     trainable_val += val_image2items[image_id]
@@ -381,23 +383,28 @@ class VQAv2Dataset(BaseDataset):
             # 1/10 train items will be select
             train_items = split2items["train"]
             random.shuffle(train_items)
-            train_items = train_items[:43000]
+            selection_idx = len(train_items) // 10
+            train_items = train_items[:selection_idx]
             _write_data_into_jsonl(items=train_items, jsonl_file=os.path.join(data_path, "vqa.train.jsonl"))
 
             # 1/10 val items will be select
             val_items = split2items["val"]
             random.shuffle(val_items)
-            trainable_val_items = val_items[:21000]
-            rest_val_items = val_items[21000:]
+            selection_idx = len(val_items) // 10
+            trainable_val_items = val_items[:selection_idx]
+            rest_val_items = val_items[selection_idx:]
             _write_data_into_jsonl(items=trainable_val_items, jsonl_file=os.path.join(data_path, "vqa.trainable_val.jsonl"))
 
             for split in ["test", "test-dev"]:
                 _write_data_into_jsonl(items=split2items[split], jsonl_file=os.path.join(data_path, "vqa.%s.jsonl" % split))
 
             # use 5000 items in rest_val as the final val set
+            # rest_val_items is 9/10 of the original val set. From this we take 5000, which is the result of dividing the size of rest_val_items by 7.3 approx
+            # or dividing the original val set by 8
             random.seed(2 * seed)
             random.shuffle(rest_val_items)
-            _write_data_into_jsonl(items=rest_val_items[:5000], jsonl_file=os.path.join(data_path, "vqa.rest_val.jsonl"))
+            selection_idx = len(val_items) // 8
+            _write_data_into_jsonl(items=rest_val_items[:selection_idx], jsonl_file=os.path.join(data_path, "vqa.rest_val.jsonl"))
 
         # write answer2label
         with open(os.path.join(data_path, "answer2label.txt"), mode="w", encoding="utf-8") as writer:
