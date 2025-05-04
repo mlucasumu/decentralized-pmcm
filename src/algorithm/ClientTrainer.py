@@ -30,6 +30,7 @@ class ClientTrainer:
         self.neighbour_dict = neighbour_dict
         self.barrier = barrier
         self.io_lock = io_lock
+        print(f"Neighbours of client {client_id}: {neighbour_dict[client_id]}")
 
         self.total_batch_size = args.batch_size * args.update_freq * utils.get_world_size()
         self.assigner = LayerDecayValueAssigner([1.0, 20.0], scale_handler=get_is_head_flag_for_vit)
@@ -75,59 +76,62 @@ class ClientTrainer:
             num_epochs = self.args.local_epochs
 
             self.logger.write("start local training client%d:" % (self.client_id))
+            print("------- start local training client%d:" % (self.client_id))
 
-            for cur_local_epoch in range(num_epochs):
-              
-                self.logger.write("start training client%d img-text." % (self.client_id))
-                if self.sample_num_dict[self.client_id]["img-text"] >= global_batch_size:
-                    self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
-                                        cur_local_epoch=cur_local_epoch, step_offset=0,
-                                        train_dataloader=train_loader_img_text, val_dataloader=val_loader,
-                                        device=device, mode="vl")
-                    torch.distributed.barrier()
+            with self.io_lock:
+                for cur_local_epoch in range(num_epochs):
+                
+                    self.logger.write("start training client%d img-text." % (self.client_id))
+                    if self.sample_num_dict[self.client_id]["img-text"] >= global_batch_size:
+                        self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
+                                            cur_local_epoch=cur_local_epoch, step_offset=0,
+                                            train_dataloader=train_loader_img_text, val_dataloader=val_loader,
+                                            device=device, mode="vl")
+                        torch.distributed.barrier()
 
-                if self.args.modal_missing:
-                    if np.random.binomial(n=1, p=0.5, size=1)[0]:
-                        self.logger.write("client%d, train img-only first." % (self.client_id))
+                    if self.args.modal_missing:
+                        if np.random.binomial(n=1, p=0.5, size=1)[0]:
+                            self.logger.write("client%d, train img-only first." % (self.client_id))
 
-                        offset_step = self.sample_num_dict[self.client_id]["img-text"] // global_batch_size
-                        self.logger.write("offset step is %d for client%d, img-only" % (offset_step,self.client_id))
-                        if self.sample_num_dict[self.client_id]["img-only"] >= global_batch_size:
-                            self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
-                                                cur_local_epoch=cur_local_epoch, step_offset=offset_step,
-                                                train_dataloader=train_loader_img_only, val_dataloader=val_loader,
-                                                device=device, mode="v")
-                            torch.distributed.barrier()
+                            offset_step = self.sample_num_dict[self.client_id]["img-text"] // global_batch_size
+                            self.logger.write("offset step is %d for client%d, img-only" % (offset_step,self.client_id))
+                            if self.sample_num_dict[self.client_id]["img-only"] >= global_batch_size:
+                                self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
+                                                    cur_local_epoch=cur_local_epoch, step_offset=offset_step,
+                                                    train_dataloader=train_loader_img_only, val_dataloader=val_loader,
+                                                    device=device, mode="v")
+                                torch.distributed.barrier()
 
-                        offset_step += self.sample_num_dict[self.client_id]["img-only"] // global_batch_size
-                        self.logger.write("offset step is %d for client%d, text-only" % (offset_step,self.client_id))
-                        if self.sample_num_dict[self.client_id]["text-only"] >= global_batch_size:
-                            self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
-                                                cur_local_epoch=cur_local_epoch, step_offset=offset_step,
-                                                train_dataloader=train_loader_text_only, val_dataloader=val_loader,
-                                                device=device, mode="l")
-                    else:
-                        self.logger.write("client%d, train text-only first." % (self.client_id))
+                            offset_step += self.sample_num_dict[self.client_id]["img-only"] // global_batch_size
+                            self.logger.write("offset step is %d for client%d, text-only" % (offset_step,self.client_id))
+                            if self.sample_num_dict[self.client_id]["text-only"] >= global_batch_size:
+                                self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
+                                                    cur_local_epoch=cur_local_epoch, step_offset=offset_step,
+                                                    train_dataloader=train_loader_text_only, val_dataloader=val_loader,
+                                                    device=device, mode="l")
+                        else:
+                            self.logger.write("client%d, train text-only first." % (self.client_id))
 
-                        offset_step = self.sample_num_dict[self.client_id]["img-text"] // global_batch_size
-                        self.logger.write("offset step is %d for client%d, text-only" % (offset_step,self.client_id))
-                        if self.sample_num_dict[self.client_id]["text-only"] >= global_batch_size:
-                            self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
-                                                cur_local_epoch=cur_local_epoch, step_offset=offset_step,
-                                                train_dataloader=train_loader_text_only, val_dataloader=val_loader,
-                                                device=device, mode="l")
-                            torch.distributed.barrier()
+                            offset_step = self.sample_num_dict[self.client_id]["img-text"] // global_batch_size
+                            self.logger.write("offset step is %d for client%d, text-only" % (offset_step,self.client_id))
+                            if self.sample_num_dict[self.client_id]["text-only"] >= global_batch_size:
+                                self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
+                                                    cur_local_epoch=cur_local_epoch, step_offset=offset_step,
+                                                    train_dataloader=train_loader_text_only, val_dataloader=val_loader,
+                                                    device=device, mode="l")
+                                torch.distributed.barrier()
 
-                        offset_step += self.sample_num_dict[self.client_id]["text-only"] // global_batch_size
-                        self.logger.write("offset step is %d for client%d, img-only" % (offset_step,self.client_id))
-                        if self.sample_num_dict[self.client_id]["img-only"] >= global_batch_size:
-                            self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
-                                                cur_local_epoch=cur_local_epoch, step_offset=offset_step,
-                                                train_dataloader=train_loader_img_only, val_dataloader=val_loader,
-                                                device=device, mode="v")
-                    torch.distributed.barrier()
+                            offset_step += self.sample_num_dict[self.client_id]["text-only"] // global_batch_size
+                            self.logger.write("offset step is %d for client%d, img-only" % (offset_step,self.client_id))
+                            if self.sample_num_dict[self.client_id]["img-only"] >= global_batch_size:
+                                self.local_train_one_epoch(cur_global_epoch=start_global_epoch + cur_local_epoch,
+                                                    cur_local_epoch=cur_local_epoch, step_offset=offset_step,
+                                                    train_dataloader=train_loader_img_only, val_dataloader=val_loader,
+                                                    device=device, mode="v")
+                        torch.distributed.barrier()
             
             self.logger.write("finish training client%d in round%d " % (self.client_id, cur_round))
+            print("------- finish training client%d in round%d " % (self.client_id, cur_round))
             torch.distributed.barrier()
 
             # Save model
@@ -142,6 +146,7 @@ class ClientTrainer:
                 self.logger.write("get prototypes for client%d in round%d " % (self.client_id, cur_round))
                 torch.distributed.barrier()
 
+            print(f"------- Client {self.client_id} saved model and prototypes -------")
             # Wait for all clients to finish local training
             self.barrier.wait()
 
@@ -159,6 +164,8 @@ class ClientTrainer:
                 torch.distributed.barrier()
 
             print("--------------------- finish round%d in client%d----------------------" % (cur_round,self.client_id))     
+
+        # We save the last model and prototypes of client 0 in the server folder
         
     def local_train_one_epoch(self, cur_local_epoch, cur_global_epoch, step_offset, device, train_dataloader, val_dataloader, mode):
         self.model.to(device)
@@ -346,6 +353,7 @@ class ClientTrainer:
             all_client_model_path = []
             for client_id in party_list:
                 all_client_model_path.append(os.path.join(self.client_path, 'client%d_model.pth' % client_id))
+                print(f"Client {self.client_id} aggregating model {self.client_path}/client{client_id}_model.pth")
             for ckpt in all_client_model_path:
                 state_dicts.append(torch.load(ckpt))
             for idx, state_dict in enumerate(state_dicts):
@@ -389,6 +397,7 @@ class ClientTrainer:
             all_client_prototype_path = []
             for client_id in party_list:
                 all_client_prototype_path.append(os.path.join(self.client_path, 'client%d_prototypes.pth' % client_id))
+                print(f"Client {self.client_id} aggregating prototypes {self.client_path}/client{client_id}_prototypes.pth")
             for prototype_path in all_client_prototype_path:
                 all_client_prototypes_box.append(torch.load(prototype_path))
             for idx, prototypes in enumerate(all_client_prototypes_box):
