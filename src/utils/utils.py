@@ -931,7 +931,12 @@ def get_topology(num_clients, topology, max_random_neighbours):
 
   for client_id in range(num_clients):
     if topology == 'ring':
-      neighbour_dict[client_id] = [(client_id - 1) % num_clients, client_id, (client_id + 1) % num_clients]
+        if (num_clients == 1):
+            neighbour_dict[client_id] = [client_id]
+        elif (num_clients == 2):
+            neighbour_dict[client_id] = [client_id, (client_id + 1) % num_clients]
+        else:
+            neighbour_dict[client_id] = [(client_id - 1) % num_clients, client_id, (client_id + 1) % num_clients]
     elif topology == 'fully':
       neighbour_dict[client_id] = [c for c in num_clients]
     elif topology == 'random':
