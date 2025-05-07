@@ -7,7 +7,6 @@ from datasets.dataset import create_dataset_by_split
 from timm.models import create_model
 from algorithm.BaseTrainer import evaluate, VQAHandler
 
-
 if __name__ == '__main__':
 
     args = get_args()
@@ -32,7 +31,7 @@ if __name__ == '__main__':
 
     model.to(device)
 
-    ckpt_path = "./save_weight/server/global_model-30.pth"
+    ckpt_path = f"./save_weight/server/client{args.test_model_num}_final_model.pth"
     
     utils.load_model_and_may_interpolate(
         ckpt_path=ckpt_path, model=model, model_key='model|module', model_prefix=''

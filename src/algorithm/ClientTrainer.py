@@ -53,6 +53,9 @@ class ClientTrainer:
     def run(self, train_loader_img_text, train_loader_img_only, train_loader_text_only,
             val_loader, loader_for_prototype, device, n_comm_rounds, global_batch_size):
 
+        # Wait until all clients have been created
+        self.barrier.wait()
+
         for cur_round in range(1, n_comm_rounds + 1):
 
             # Set mse loss
@@ -165,7 +168,12 @@ class ClientTrainer:
 
             print("--------------------- finish round%d in client%d----------------------" % (cur_round,self.client_id))     
 
-        # We save the last model and prototypes of client 0 in the server folder
+        # We save the last model and prototypes in the server folder
+        if utils.is_main_process():
+            torch.save(self.model.state_dict(), f"./save_weight/server/client{self.client_id}_final_model.pth")
+            torch.save(self.prototypes, f"./save_weight/server/client{self.client_id}_final_prototypes.pth")
+
+
         
     def local_train_one_epoch(self, cur_local_epoch, cur_global_epoch, step_offset, device, train_dataloader, val_dataloader, mode):
         self.model.to(device)

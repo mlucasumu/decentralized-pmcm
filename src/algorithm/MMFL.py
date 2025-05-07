@@ -92,6 +92,7 @@ class MMFL:
                                             barrier=self.barrier, io_lock=self.io_lock)
 
             self.logger.write("finish creating client%d trainer" % (client_id))
+            print("finish creating client%d trainer" % (client_id))
 
             # Start client trainer algorithm
             self.logger.write("start training client%d" % (client_id))

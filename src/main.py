@@ -109,6 +109,8 @@ def get_args():
     parser.add_argument('--no_img_proto_target', action='store_true', default=False)
     parser.add_argument('--no_text_proto_target', action='store_true', default=False)
     parser.add_argument('--no_fusion_proto_target', action='store_true', default=False)
+    # testing
+    parser.add_argument('--test_model_num', default=0, type=int)
 
     # other
     parser.set_defaults(embed_dim=768)
