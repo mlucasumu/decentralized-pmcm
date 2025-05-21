@@ -938,10 +938,10 @@ def get_topology(num_clients, topology, max_random_neighbours):
         else:
             neighbour_dict[client_id] = [(client_id - 1) % num_clients, client_id, (client_id + 1) % num_clients]
     elif topology == 'fully':
-      neighbour_dict[client_id] = [c for c in num_clients]
+      neighbour_dict[client_id] = [c for c in range(num_clients)]
     elif topology == 'random':
       n_neighbours = random.randrange(max_random_neighbours)
-      all_other_clients = [c for c in num_clients if c != client_id]
+      all_other_clients = [c for c in range(num_clients) if c != client_id]
       neighbours = random.sample(all_other_clients, n_neighbours)
       neighbours.append(client_id)
       neighbour_dict[client_id] = neighbours
