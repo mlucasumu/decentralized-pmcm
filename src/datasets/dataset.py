@@ -491,6 +491,7 @@ class VQAv2Dataset(BaseDataset):
     @classmethod
     def make_modal_missing_index(cls, data_path, modal_missing_rate, alpha, n_clients, n_classes, split="train", seed=42):
         np.random.seed(seed)
+        print(f"modal missing rate is {modal_missing_rate}")
         items_split_by_clients, data_statistic = cls.make_noniid_index(data_path=data_path, alpha=alpha,
                                                                        n_clients=n_clients, n_classes=n_classes,
                                                                        split=split, seed=seed)

@@ -97,9 +97,9 @@ def get_args():
     parser.add_argument('--regularization_start_round', default=2, type=int)  # 2
     parser.add_argument('--kd_temperature', default=0.5, type=float)
     parser.add_argument('--fedprox_weight', default=1.0, type=float)
-    parser.set_defaults(modal_missing=False)
-    parser.set_defaults(prototype_as_missing_modal=False)
-    parser.set_defaults(prototype_as_rep_target=False)
+    #parser.set_defaults(modal_missing=False)
+    #parser.set_defaults(prototype_as_missing_modal=False)
+    #parser.set_defaults(prototype_as_rep_target=False)
     parser.set_defaults(img_proto_target=False)
     parser.set_defaults(text_proto_target=False)
     parser.set_defaults(fusion_proto_target=False)
@@ -111,6 +111,11 @@ def get_args():
     parser.add_argument('--no_fusion_proto_target', action='store_true', default=False)
     # testing
     parser.add_argument('--test_model_num', default=0, type=int)
+    parser.add_argument('--test_img_only', action='store_true', default=False) # Can only do either img only or text only, not both at the same time
+    parser.add_argument('--test_text_only', action='store_true', default=False)
+    parser.add_argument('--use_test_prototypes', action='store_true', default=False) # Only useful when testing img or text only
+    parser.add_argument('--use_random_prototypes', action='store_true', default=False) # Only useful when testing img or text only
+    # If use_test_prototypes and use_random_prototypes are False when testing img or text only, then zero prototypes are used
 
     # other
     parser.set_defaults(embed_dim=768)
