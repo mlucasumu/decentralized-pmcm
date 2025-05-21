@@ -9,7 +9,7 @@ import glob
 import torch
 import numpy as np
 from datasets.dataset import create_dataset_by_split
-#import threading
+import threading
 import torch.multiprocessing as mp 
 
 
@@ -27,8 +27,8 @@ class MMFL:
         self.train_split_list_text_only = train_split_list_text_only
         self.logger = logger
 
-        #self.barrier = threading.Barrier(client_nums)  # Per-round synchronization
-        #self.io_lock = threading.Lock()                # Protection when reading/writing files
+        self.barrier = threading.Barrier(client_nums)  # Per-round synchronization
+        self.io_lock = threading.Lock()                # Protection when reading/writing files
 
         self.client_path = None
         self.server_path = args.output_dir + "/server"
@@ -38,7 +38,7 @@ class MMFL:
 
     def run(self, n_comm_rounds, selected_client_nums):
 
-        processes = []
+        threads = []
         for client_id in range(self.client_nums):
 
             self.logger.write("----- initializing client%d ------" % (client_id))
@@ -88,22 +88,24 @@ class MMFL:
             client_trainer = ClientTrainer(self.args, model=model, client_id=client_id,
                                             client_path=self.client_path, server_path=self.server_path,
                                             steps_per_epoch=steps_per_epoch, logger=self.logger,
-                                            sample_num_dict=self.sample_num_dict, neighbour_dict=self.neighbour_dict)
+                                            sample_num_dict=self.sample_num_dict, neighbour_dict=self.neighbour_dict,
+                                            barrier=self.barrier, io_lock=self.io_lock)
 
             self.logger.write("finish creating client%d trainer" % (client_id))
+            print("finish creating client%d trainer" % (client_id))
 
             # Start client trainer algorithm
             self.logger.write("start training client%d" % (client_id))
-            p = mp.Process(target=client_trainer.run, 
+            t = threading.Thread(target=client_trainer.run, 
                                         args=(train_loader_img_text, train_loader_img_only, train_loader_text_only,
-                                        val_loader, loader_for_prototype, self.device, 
-                                        n_comm_rounds, global_batch_size,)
+                                        val_loader, train_loader_img_text, self.device, 
+                                        n_comm_rounds, global_batch_size,) # loader_for_prototype doesn't work??
                             )
-            p.start()
-            processes.append(p)
+            t.start()
+            threads.append(t)
 
         # Wait for clients to finish
-        for p in processes:
-            p.join()
+        for t in threads:
+            t.join()
 
         self.logger.write("--------------------- Finish MMFL ----------------------")

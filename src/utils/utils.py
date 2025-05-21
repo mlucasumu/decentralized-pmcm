@@ -302,7 +302,7 @@ def init_distributed_mode(args):
     args.distributed = True
 
     torch.cuda.set_device(args.gpu)
-    args.dist_backend = 'nccl'
+    args.dist_backend = 'nccl' if args.device == 'cuda' else 'gloo' # nccl for GPU, gloo for CPU as per https://pytorch.org/docs/stable/distributed.html
     print('| distributed init (rank {}): {}, gpu {}'.format(
         args.rank, args.dist_url, args.gpu), flush=True)
     torch.distributed.init_process_group(
@@ -931,12 +931,17 @@ def get_topology(num_clients, topology, max_random_neighbours):
 
   for client_id in range(num_clients):
     if topology == 'ring':
-      neighbour_dict[client_id] = [(client_id - 1) % num_clients, client_id, (client_id + 1) % num_clients]
+        if (num_clients == 1):
+            neighbour_dict[client_id] = [client_id]
+        elif (num_clients == 2):
+            neighbour_dict[client_id] = [client_id, (client_id + 1) % num_clients]
+        else:
+            neighbour_dict[client_id] = [(client_id - 1) % num_clients, client_id, (client_id + 1) % num_clients]
     elif topology == 'fully':
-      neighbour_dict[client_id] = [c for c in num_clients]
+      neighbour_dict[client_id] = [c for c in range(num_clients)]
     elif topology == 'random':
       n_neighbours = random.randrange(max_random_neighbours)
-      all_other_clients = [c for c in num_clients if c != client_id]
+      all_other_clients = [c for c in range(num_clients) if c != client_id]
       neighbours = random.sample(all_other_clients, n_neighbours)
       neighbours.append(client_id)
       neighbour_dict[client_id] = neighbours

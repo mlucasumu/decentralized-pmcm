@@ -126,7 +126,9 @@ class VQAHandler(object):
             model.set_mode("v")
         else:
             model.module.set_mode("v")
-        logits, _ = model(image=image, question=None, padding_mask=None, prototype=prototypes)
+        
+        index = torch.argmax(labels, dim=1).detach()
+        logits, _ = model(image=image, question=None, padding_mask=None, prototype=prototypes["text"][index])
         batch_size = labels.shape[0]
         scores = utils.VQAScore()(logits, labels) * 100.0
         self.metric_logger.meters['score'].update(scores.item(), n=batch_size)
@@ -136,7 +138,9 @@ class VQAHandler(object):
             model.set_mode("l")
         else:
             model.module.set_mode("l")
-        logits, _ = model(image=None, question=text, padding_mask=padding, prototype=prototypes)
+
+        index = torch.argmax(labels, dim=1).detach()
+        logits, _ = model(image=None, question=text, padding_mask=padding, prototype=prototypes["img"][index])
         batch_size = labels.shape[0]
         scores = utils.VQAScore()(logits, labels) * 100.0
         self.metric_logger.meters['score'].update(scores.item(), n=batch_size)
@@ -264,19 +268,26 @@ def train_one_epoch(
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, handler):
+def evaluate(args, data_loader, model, prototypes, device, handler):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
     model.eval()
     handler.before_eval(metric_logger=metric_logger, data_loader=data_loader)
-
+    
     for data in metric_logger.log_every(data_loader, 10, header):
+        # dict_keys(['image', 'language_tokens', 'padding_mask', 'labels'])
         for tensor_key in data.keys():
             data[tensor_key] = data[tensor_key].to(device, non_blocking=True)
 
         with torch.cuda.amp.autocast():
-            handler.eval_batch(model=model, **data)
+            if args.test_img_only:
+                handler.eval_batch_image_only(model, data["image"], prototypes, data["labels"])
+            elif args.test_text_only:
+                handler.eval_batch_text_only(model, data["language_tokens"], data["padding_mask"], prototypes, data["labels"])
+            else:
+                handler.eval_batch(model=model, **data)
+            
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
